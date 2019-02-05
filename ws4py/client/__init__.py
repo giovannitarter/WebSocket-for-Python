@@ -14,7 +14,7 @@ __all__ = ['WebSocketBaseClient']
 
 class WebSocketBaseClient(WebSocket):
     def __init__(self, url, protocols=None, extensions=None,
-                 heartbeat_freq=None, ssl_options=None, headers=None, exclude_headers=None):
+                 heartbeat_freq=None, ssl_context=None, headers=None, exclude_headers=None):
         """
         A websocket client that implements :rfc:`6455` and provides a simple
         interface to communicate with a websocket server.
@@ -76,17 +76,18 @@ class WebSocketBaseClient(WebSocket):
         self.port = None
         self.unix_socket_path = None
         self.resource = None
-        self.ssl_options = ssl_options or {}
+        self.ssl_context = ssl_context or None
         self.extra_headers = headers or []
         self.exclude_headers = exclude_headers or []
         self.exclude_headers = [x.lower() for x in self.exclude_headers]
 
+        self._parse_url()
+        
         if self.scheme == "wss":
             # Prevent check_hostname requires server_hostname (ref #187)
-            if "cert_reqs" not in self.ssl_options:
-                self.ssl_options["cert_reqs"] = ssl.CERT_NONE
-
-        self._parse_url()
+            if self.ssl_context is None:
+                self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23) 
+                self.ssl_context.verify_mode = ssl.CERT_NONE
 
         if self.unix_socket_path:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
@@ -211,7 +212,10 @@ class WebSocketBaseClient(WebSocket):
         """
         if self.scheme == "wss":
             # default port is now 443; upgrade self.sender to send ssl
-            self.sock = ssl.wrap_socket(self.sock, **self.ssl_options)
+            self.sock = self.ssl_context.wrap_socket(
+                    self.sock, 
+                    server_hostname=self.host
+                    )
             self._is_secure = True
 
         self.sock.connect(self.bind_addr)
